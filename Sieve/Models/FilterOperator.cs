@@ -11,5 +11,7 @@
         Contains,
         StartsWith,
         EndsWith,
+        DateEquals,
+        DateNotEquals
     }
 }

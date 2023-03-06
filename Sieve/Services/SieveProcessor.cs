@@ -316,34 +316,86 @@ namespace Sieve.Services
             value = value.Equals(EscapeChar + NullFilterValue, StringComparison.InvariantCultureIgnoreCase) 
                 ? value.TrimStart(EscapeChar) 
                 : value;
-            dynamic constantVal = converter.CanConvertFrom(typeof(string))
+            var constantVal = converter.CanConvertFrom(typeof(string))
                 ? converter.ConvertFrom(value)
                 : Convert.ChangeType(value, property.PropertyType);
 
             return GetClosureOverConstant(constantVal, property.PropertyType);
         }
 
-        private static Expression GetExpression(TFilterTerm filterTerm, dynamic filterValue, dynamic propertyValue)
+        private static Expression GetExpression(TFilterTerm filterTerm, Expression filterValueExpression,
+            Expression propertyValueExpression)
         {
-            return filterTerm.OperatorParsed switch
-            {
-                FilterOperator.Equals => Expression.Equal(propertyValue, filterValue),
-                FilterOperator.NotEquals => Expression.NotEqual(propertyValue, filterValue),
-                FilterOperator.GreaterThan => Expression.GreaterThan(propertyValue, filterValue),
-                FilterOperator.LessThan => Expression.LessThan(propertyValue, filterValue),
-                FilterOperator.GreaterThanOrEqualTo => Expression.GreaterThanOrEqual(propertyValue, filterValue),
-                FilterOperator.LessThanOrEqualTo => Expression.LessThanOrEqual(propertyValue, filterValue),
-                FilterOperator.Contains => Expression.Call(propertyValue,
-                    typeof(string).GetMethods().First(m => m.Name == "Contains" && m.GetParameters().Length == 1),
-                    filterValue),
-                FilterOperator.StartsWith => Expression.Call(propertyValue,
-                    typeof(string).GetMethods().First(m => m.Name == "StartsWith" && m.GetParameters().Length == 1),
-                    filterValue),
-                FilterOperator.EndsWith => Expression.Call(propertyValue,
-                typeof(string).GetMethods().First(m => m.Name == "EndsWith" && m.GetParameters().Length == 1),
-                filterValue),
-                _ => Expression.Equal(propertyValue, filterValue)
-            };
+            if
+            (
+                (
+                    filterTerm.OperatorParsed != FilterOperator.DateEquals &&
+                    filterTerm.OperatorParsed != FilterOperator.DateNotEquals
+                ) ||
+                !(
+                    filterValueExpression is UnaryExpression
+                    {
+                        Operand: MemberExpression
+                        {
+                            Expression: ConstantExpression constantExpression
+                        }
+                    }
+                )
+            )
+                return filterTerm.OperatorParsed switch
+                {
+                    FilterOperator.Equals => Expression.Equal(propertyValueExpression, filterValueExpression),
+                    FilterOperator.NotEquals => Expression.NotEqual(propertyValueExpression, filterValueExpression),
+                    FilterOperator.GreaterThan =>
+                        Expression.GreaterThan(propertyValueExpression, filterValueExpression),
+                    FilterOperator.LessThan => Expression.LessThan(propertyValueExpression, filterValueExpression),
+                    FilterOperator.GreaterThanOrEqualTo => Expression.GreaterThanOrEqual(propertyValueExpression,
+                        filterValueExpression),
+                    FilterOperator.LessThanOrEqualTo => Expression.LessThanOrEqual(propertyValueExpression,
+                        filterValueExpression),
+                    FilterOperator.Contains => Expression.Call(propertyValueExpression,
+                        typeof(string).GetMethods().First(m => m.Name == "Contains" && m.GetParameters().Length == 1),
+                        filterValueExpression),
+                    FilterOperator.StartsWith => Expression.Call(propertyValueExpression,
+                        typeof(string).GetMethods().First(m => m.Name == "StartsWith" && m.GetParameters().Length == 1),
+                        filterValueExpression),
+                    FilterOperator.EndsWith => Expression.Call(propertyValueExpression,
+                        typeof(string).GetMethods().First(m => m.Name == "EndsWith" && m.GetParameters().Length == 1),
+                        filterValueExpression),
+                    _ => Expression.Equal(propertyValueExpression, filterValueExpression)
+                };
+
+            var currentFilterValue = (constantExpression.Value as dynamic).constant;
+
+            var filterValue = currentFilterValue as DateTime?;
+
+            var lowerBoundFilterValue = filterValue?.ToUniversalTime();
+            var upperBoundFilterValue = lowerBoundFilterValue?.AddDays(1);
+
+            return Expression.AndAlso
+            (
+                Expression.GreaterThanOrEqual
+                (
+                    propertyValueExpression,
+                    Expression.Constant
+                    (
+                        lowerBoundFilterValue,
+                        ((propertyValueExpression as MemberExpression)?.Member as PropertyInfo)?.PropertyType ??
+                        typeof(DateTime?)
+                    )
+                ),
+                Expression.LessThan
+                (
+                    propertyValueExpression,
+                    Expression.Constant
+                    (
+                        upperBoundFilterValue,
+                        ((propertyValueExpression as MemberExpression)?.Member as PropertyInfo)?.PropertyType ??
+                        typeof(DateTime?)
+                    )
+                )
+            );
+
         }
 
         // Workaround to ensure that the filter value gets passed as a parameter in generated SQL from EF Core

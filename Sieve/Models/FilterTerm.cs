@@ -8,7 +8,7 @@ namespace Sieve.Models
     public class FilterTerm : IFilterTerm, IEquatable<FilterTerm>
     {
         private const string EscapedPipePattern = @"(?<!($|[^\\]|^)(\\\\)*?\\)\|";
-        private const string OperatorsRegEx = @"(!@=\*|!_=\*|!_-=\*|!=\*|!@=|!_=|!_-=|==\*|@=\*|_=\*|_-=\*|==|!=|>=|<=|>|<|@=|_=|_-=)";
+        private const string OperatorsRegEx = @"(!@=\*|!_=\*|!_-=\*|!=\*|!@=|!_=|!_-=|==\*|@=\*|_=\*|_-=\*|==|!=|>=|<=|>|<|@=|_=|_-=|=d=|!d=)";
         private const string EscapeNegPatternForOper = @"(?<!\\)" + OperatorsRegEx;
         private const string EscapePosPatternForOper = @"(?<=\\)" + OperatorsRegEx;
 
@@ -66,6 +66,10 @@ namespace Sieve.Models
                     return FilterOperator.Equals;
                 case "!=":
                     return FilterOperator.NotEquals;
+                case "=d=":
+                    return FilterOperator.DateEquals;
+                case "!d=":
+                    return FilterOperator.DateNotEquals;
                 case "<":
                     return FilterOperator.LessThan;
                 case ">":
@@ -94,9 +98,9 @@ namespace Sieve.Models
 
         public bool Equals(FilterTerm other)
         {
-            return Names.SequenceEqual(other.Names)
-                && Values.SequenceEqual(other.Values)
-                && Operator == other.Operator;
+            return Names.SequenceEqual(other?.Names ?? Array.Empty<string>())
+                && Values.SequenceEqual(other?.Values ?? Array.Empty<string>())
+                && Operator == other?.Operator;
         }
     }
 }

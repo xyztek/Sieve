@@ -12,6 +12,8 @@ namespace SieveUnitTests.Entities
         public DateTimeOffset DateCreated { get; set; } = DateTimeOffset.UtcNow;
 
         public string DeletedBy { get; set; }
-        public DateTime? DeletedAt { get; set; }
+
+        [Sieve(CanFilter = true)]
+        public DateTime DeletedAt { get; set; }
     }
 }

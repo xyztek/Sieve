@@ -38,7 +38,8 @@ namespace SieveUnitTests
                     IsDraft = false,
                     CategoryId = 1,
                     TopComment = new Comment { Id = 3, Text = "B1" },
-                    FeaturedComment = new Comment { Id = 5, Text = "B2" }
+                    FeaturedComment = new Comment { Id = 5, Text = "B2" },
+                    DeletedAt = DateTime.Parse("2023-03-08T05:00:00Z")
                 },
                 new Post
                 {
@@ -625,6 +626,39 @@ namespace SieveUnitTests
             {
                 var result = sieveProcessor.Apply(model, posts);
                 Assert.Equal(0, result.Count());
+            }
+        }
+
+        [Fact]
+        public void FilteringDateWorks()
+        {
+            var model = new SieveModel
+            {
+                Filters = "DeletedAt=d=2023-03-07T21:00:00Z"
+            };
+
+            foreach (var sieveProcessor in GetProcessors())
+            {
+                var result = sieveProcessor.Apply(model, _posts);
+                Assert.Equal(1, result.Count());
+
+                Assert.Equal(1, result.Single().Id);
+                Assert.Equal("B", result.Single().Title);
+            }
+        }
+
+        [Fact]
+        public void FilteringDateWorks2()
+        {
+            var model = new SieveModel
+            {
+                Filters = "DeletedAt!d=2023-03-07T21:00:00Z"
+            };
+
+            foreach (var sieveProcessor in GetProcessors())
+            {
+                var result = sieveProcessor.Apply(model, _posts);
+                Assert.Equal(_posts.Count() - 1, result.Count());
             }
         }
 
