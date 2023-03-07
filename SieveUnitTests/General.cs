@@ -634,7 +634,7 @@ namespace SieveUnitTests
         {
             var model = new SieveModel
             {
-                Filters = "DeletedAt=d=2023-03-07T21:00:00Z"
+                Filters = "DeletedAt$=2023-03-07T21:00:00Z"
             };
 
             foreach (var sieveProcessor in GetProcessors())
@@ -652,7 +652,7 @@ namespace SieveUnitTests
         {
             var model = new SieveModel
             {
-                Filters = "DeletedAt!d=2023-03-07T21:00:00Z"
+                Filters = "DeletedAt!$=2023-03-07T21:00:00Z"
             };
 
             foreach (var sieveProcessor in GetProcessors())

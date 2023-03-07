@@ -8,7 +8,7 @@ namespace Sieve.Models
     public class FilterTerm : IFilterTerm, IEquatable<FilterTerm>
     {
         private const string EscapedPipePattern = @"(?<!($|[^\\]|^)(\\\\)*?\\)\|";
-        private const string OperatorsRegEx = @"(!@=\*|!_=\*|!_-=\*|!=\*|!@=|!_=|!_-=|==\*|@=\*|_=\*|_-=\*|==|!=|>=|<=|>|<|@=|_=|_-=|=d=|!d=)";
+        private const string OperatorsRegEx = @"(!@=\*|!_=\*|!_-=\*|!=\*|!@=|!_=|!_-=|==\*|@=\*|_=\*|_-=\*|==|!=|>=|<=|>|<|@=|_=|_-=|\$=|!\$=)";
         private const string EscapeNegPatternForOper = @"(?<!\\)" + OperatorsRegEx;
         private const string EscapePosPatternForOper = @"(?<=\\)" + OperatorsRegEx;
 
@@ -66,9 +66,9 @@ namespace Sieve.Models
                     return FilterOperator.Equals;
                 case "!=":
                     return FilterOperator.NotEquals;
-                case "=d=":
+                case "$=":
                     return FilterOperator.DateEquals;
-                case "!d=":
+                case "!$=":
                     return FilterOperator.DateNotEquals;
                 case "<":
                     return FilterOperator.LessThan;
