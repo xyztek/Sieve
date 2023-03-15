@@ -179,30 +179,38 @@ namespace Sieve.Services
                 Expression innerExpression = null;
                 foreach (var filterTermName in filterTerm.Names)
                 {
-                    var (fullPropertyName, property) = GetSieveProperty<TEntity>(false, true, filterTermName);
-                    if (property != null)
+                    var (fullMemberName, memberInfo) = GetSieveProperty<TEntity>(false, true, filterTermName);
+                    if (memberInfo != null)
                     {
                         if (filterTerm.Values == null)
                         {
                             continue;
                         }
 
-                        var converter = TypeDescriptor.GetConverter(property.PropertyType);
                         foreach (var filterTermValue in filterTerm.Values)
                         {
-                            var (propertyValue, nullCheck) =
-                                GetPropertyValueAndNullCheckExpression(parameter, fullPropertyName);
+                            var (valueAccessExpression, nullCheckExpression, dataType) = memberInfo switch
+                            {
+                                PropertyInfo propertyInfo => GetPropertyValueAndNullCheckExpression(parameter, fullMemberName, propertyInfo.PropertyType),
+                                FieldInfo fieldInfo => GetFieldValueAndNullCheckExpression(parameter, fieldInfo, fullMemberName),
+                                //MethodInfo methodInfo => null,
+
+                                _ => throw new SieveException(
+                                    $"Incompatible member type. Expected one of {MemberTypes.Property} or {MemberTypes.Field} or {MemberTypes.Method}. Actual {memberInfo.MemberType}")
+                            };
+
+                            var modifiedValueAccessExpression = valueAccessExpression;
 
                             var isFilterTermValueNull =
-                                IsFilterTermValueNull(propertyValue, filterTerm, filterTermValue);
+                                IsFilterTermValueNull(valueAccessExpression, filterTerm, filterTermValue);
 
                             var filterValue = isFilterTermValueNull
-                                ? Expression.Constant(null, property.PropertyType)
-                                : ConvertStringValueToConstantExpression(filterTermValue, property, converter);
+                                ? Expression.Constant(null, dataType)
+                                : ConvertStringValueToConstantExpression(filterTermValue, dataType, TypeDescriptor.GetConverter(dataType));
 
                             if (filterTerm.OperatorIsCaseInsensitive && !isFilterTermValueNull)
                             {
-                                propertyValue = Expression.Call(propertyValue,
+                                modifiedValueAccessExpression = Expression.Call(modifiedValueAccessExpression,
                                     typeof(string).GetMethods()
                                         .First(m => m.Name == "ToUpper" && m.GetParameters().Length == 0));
 
@@ -211,7 +219,7 @@ namespace Sieve.Services
                                         .First(m => m.Name == "ToUpper" && m.GetParameters().Length == 0));
                             }
 
-                            var expression = GetExpression(filterTerm, filterValue, propertyValue);
+                            var expression = GetExpression(filterTerm, filterValue, modifiedValueAccessExpression);
 
                             if (filterTerm.OperatorIsNegated)
                             {
@@ -220,7 +228,7 @@ namespace Sieve.Services
 
                             if (expression.NodeType != ExpressionType.NotEqual || Options.Value.IgnoreNullsOnNotEqual)
                             {
-                                var filterValueNullCheck = GetFilterValueNullCheck(parameter, fullPropertyName, isFilterTermValueNull);
+                                var filterValueNullCheck = GetFilterValueNullCheck(valueAccessExpression, nullCheckExpression, isFilterTermValueNull);
                                 if (filterValueNullCheck != null)
                                 {
                                     expression = Expression.AndAlso(filterValueNullCheck, expression);
@@ -258,16 +266,14 @@ namespace Sieve.Services
                 : result.Where(Expression.Lambda<Func<TEntity, bool>>(outerExpression, parameter));
         }
 
-        private static Expression GetFilterValueNullCheck(Expression parameter, string fullPropertyName, bool isFilterTermValueNull)
+        private static Expression GetFilterValueNullCheck(Expression valueAccessExpression, Expression nullCheckExpression, bool isFilterTermValueNull)
         {
-            var (propertyValue, nullCheck) = GetPropertyValueAndNullCheckExpression(parameter, fullPropertyName);
-
-            if (!isFilterTermValueNull && propertyValue.Type.IsNullable())
+            if (!isFilterTermValueNull && valueAccessExpression.Type.IsNullable())
             {
-                return GenerateFilterNullCheckExpression(propertyValue, nullCheck);
+                return GenerateFilterNullCheckExpression(valueAccessExpression, nullCheckExpression);
             }
 
-            return nullCheck;
+            return nullCheckExpression;
         }
 
         private static bool IsFilterTermValueNull(Expression propertyValue, TFilterTerm filterTerm,
@@ -281,36 +287,68 @@ namespace Sieve.Services
             return filterTermValue.ToLower() == NullFilterValue && (isNotString || isValidStringNullOperation);
         }
 
-        private static (Expression propertyValue, Expression nullCheck) GetPropertyValueAndNullCheckExpression(
-            Expression parameter, string fullPropertyName)
+        private static (Expression ValueExpression, Expression NullCheck, Type DataType) GetFieldValueAndNullCheckExpression
+        (
+            ParameterExpression parameterExpression,
+            FieldInfo fieldInfo,
+            string fullPropertyName
+        )
         {
-            var propertyValue = parameter;
+            if(!typeof(Expression).IsAssignableFrom(fieldInfo.FieldType) && !fieldInfo.IsStatic)
+                return GetPropertyValueAndNullCheckExpression(parameterExpression, fullPropertyName, fieldInfo.FieldType);
+
+            object fieldValue;
+
+            if (!fieldInfo.IsStatic)
+            {
+                fieldValue = null;
+
+                return (parameterExpression, null, null);
+            }
+
+            fieldValue = fieldInfo.GetValue(null);
+
+            if (!(fieldValue is LambdaExpression lambdaExpression))
+                return (parameterExpression, null, null);
+
+            var body = lambdaExpression.Body;
+
+            //var valueExpression = Expression.AndAlso(body, parameterExpression);
+            var valueExpression = Expression.Invoke(lambdaExpression, parameterExpression);
+
+
+            return (valueExpression, null, lambdaExpression.ReturnType);
+        }
+
+        private static (Expression ValueExpression, Expression NullCheck, Type DataType) GetPropertyValueAndNullCheckExpression(
+            Expression parameter, string fullPropertyName, Type propertyType)
+        {
+            var valueExpression = parameter;
             Expression nullCheck = null;
             var names = fullPropertyName.Split('.');
             for (var i = 0; i < names.Length; i++)
             {
-                propertyValue = propertyValue.GeneratePropertyAccess(names[i]);
+                valueExpression = valueExpression.GeneratePropertyAccess(names[i]);
 
-                if (i != names.Length - 1 && propertyValue.Type.IsNullable())
+                if (i != names.Length - 1 && valueExpression.Type.IsNullable())
                 {
-                    nullCheck = GenerateFilterNullCheckExpression(propertyValue, nullCheck);
+                    nullCheck = GenerateFilterNullCheckExpression(valueExpression, nullCheck);
                 }
             }
 
-            return (propertyValue, nullCheck);
+            return (valueExpression, nullCheck, propertyType);
         }
 
-        private static Expression GenerateFilterNullCheckExpression(Expression propertyValue,
+        private static Expression GenerateFilterNullCheckExpression(Expression valueExpression,
             Expression nullCheckExpression)
         {
             return nullCheckExpression == null
-                ? Expression.NotEqual(propertyValue, Expression.Default(propertyValue.Type))
+                ? Expression.NotEqual(valueExpression, Expression.Default(valueExpression.Type))
                 : Expression.AndAlso(nullCheckExpression,
-                    Expression.NotEqual(propertyValue, Expression.Default(propertyValue.Type)));
+                    Expression.NotEqual(valueExpression, Expression.Default(valueExpression.Type)));
         }
 
-        private static Expression ConvertStringValueToConstantExpression(string value, PropertyInfo property,
-            TypeConverter converter)
+        private static Expression ConvertStringValueToConstantExpression(string value, Type dataType, TypeConverter converter)
         {
             // to allow user to distinguish between prop==null (as null) and prop==\null (as "null"-string)
             value = value.Equals(EscapeChar + NullFilterValue, StringComparison.InvariantCultureIgnoreCase) 
@@ -318,9 +356,9 @@ namespace Sieve.Services
                 : value;
             var constantVal = converter.CanConvertFrom(typeof(string))
                 ? converter.ConvertFrom(value)
-                : Convert.ChangeType(value, property.PropertyType);
+                : Convert.ChangeType(value, dataType);
 
-            return GetClosureOverConstant(constantVal, property.PropertyType);
+            return GetClosureOverConstant(constantVal, dataType);
         }
 
         private static Expression GetExpression(TFilterTerm filterTerm, Expression filterValueExpression,
@@ -456,7 +494,7 @@ namespace Sieve.Services
             return mapper;
         }
 
-        private (string, PropertyInfo) GetSieveProperty<TEntity>(bool canSortRequired, bool canFilterRequired,
+        private (string, MemberInfo) GetSieveProperty<TEntity>(bool canSortRequired, bool canFilterRequired,
             string name)
         {
             var property = _mapper.FindProperty<TEntity>(canSortRequired, canFilterRequired, name,

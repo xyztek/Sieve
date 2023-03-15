@@ -629,6 +629,23 @@ namespace SieveUnitTests
             }
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void FilteringByExpressionWorks(bool checkValue)
+        {
+            var model = new SieveModel
+            {
+                Filters = $"Expression=={checkValue}"
+            };
+
+            foreach (var sieveProcessor in GetProcessors())
+            {
+                var result = sieveProcessor.Apply(model, _posts);
+                Assert.Equal(_posts.Count(post => post.IsDraft == checkValue), result.Count());
+            }
+        }
+
         [Fact]
         public void FilteringDateWorks()
         {

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq.Expressions;
 using Sieve.Attributes;
 using SieveUnitTests.Abstractions.Entity;
 
@@ -35,5 +36,10 @@ namespace SieveUnitTests.Entities
         public DateTime? CreatedAt { get; set; }
         public string UpdatedBy { get; set; }
         public DateTime? UpdatedAt { get; set; }
+
+        public static class MappingExpressions
+        {
+            public static Expression<Func<Post, bool>> TestExpression = post => post.IsDraft && post.FeaturedComment.Author != "";
+        }
     }
 }
