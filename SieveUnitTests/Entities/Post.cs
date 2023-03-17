@@ -37,9 +37,7 @@ namespace SieveUnitTests.Entities
         public string UpdatedBy { get; set; }
         public DateTime? UpdatedAt { get; set; }
 
-        public static class MappingExpressions
-        {
-            public static Expression<Func<Post, bool>> TestExpression = post => post.IsDraft && post.FeaturedComment.Author != "";
-        }
+        public Expression<Func<IPost, bool>> TestExpression_Instance => post => post.IsDraft;
+        public static Expression<Func<IPost, bool>> TestExpression => post => post.IsDraft;
     }
 }

@@ -48,9 +48,16 @@ namespace SieveUnitTests.Entities
                 .HasName("UpdatedBy");
 
             mapper
-                .Property<Post>(post => Post.MappingExpressions.TestExpression)
+                .Property<Post>(post => Post.TestExpression)
                 .HasName("Expression")
-                .CanFilter();
+                .CanFilter()
+                .CanSort();
+
+            mapper
+                .Property<Post>(post => post.TestExpression_Instance)
+                .HasName("TestExpression_Instance")
+                .CanFilter()
+                .CanSort();
         }
 
         public void Configure(SievePropertyMapper mapper)

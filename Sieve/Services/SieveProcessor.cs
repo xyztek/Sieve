@@ -118,9 +118,15 @@ namespace Sieve.Services
         /// <param name="applySorting">Should the data be sorted? Defaults to true.</param>
         /// <param name="applyPagination">Should the data be paginated? Defaults to true.</param>
         /// <returns>Returns a transformed version of `source`</returns>
-        public IQueryable<TEntity> Apply<TEntity>(TSieveModel model, IQueryable<TEntity> source,
-            object[] dataForCustomMethods = null, bool applyFiltering = true, bool applySorting = true,
-            bool applyPagination = true)
+        public IQueryable<TEntity> Apply<TEntity>
+        (
+            TSieveModel model,
+            IQueryable<TEntity> source,
+            object[] dataForCustomMethods = null,
+            bool applyFiltering = true,
+            bool applySorting = true,
+            bool applyPagination = true
+        )
         {
             var result = source;
 
@@ -164,8 +170,12 @@ namespace Sieve.Services
             }
         }
 
-        protected virtual IQueryable<TEntity> ApplyFiltering<TEntity>(TSieveModel model, IQueryable<TEntity> result,
-            object[] dataForCustomMethods = null)
+        protected virtual IQueryable<TEntity> ApplyFiltering<TEntity>
+        (
+            TSieveModel model,
+            IQueryable<TEntity> result,
+            object[] dataForCustomMethods = null
+        )
         {
             if (model?.GetFiltersParsed() == null)
             {
@@ -173,7 +183,7 @@ namespace Sieve.Services
             }
 
             Expression outerExpression = null;
-            var parameter = Expression.Parameter(typeof(TEntity), "e");
+            var parameterExpression = Expression.Parameter(typeof(TEntity), "e");
             foreach (var filterTerm in model.GetFiltersParsed())
             {
                 Expression innerExpression = null;
@@ -189,61 +199,97 @@ namespace Sieve.Services
 
                         foreach (var filterTermValue in filterTerm.Values)
                         {
-                            var (valueAccessExpression, nullCheckExpression, dataType) = memberInfo switch
-                            {
-                                PropertyInfo propertyInfo => GetPropertyValueAndNullCheckExpression(parameter, fullMemberName, propertyInfo.PropertyType),
-                                FieldInfo fieldInfo => GetFieldValueAndNullCheckExpression(parameter, fieldInfo, fullMemberName),
-                                //MethodInfo methodInfo => null,
+                            var propertyAccessExpression = parameterExpression.GenerateFullExpressionTree
+                            (
+                                fullMemberName,
+                                true,
+                                null,
+                                null,
+                                out var nullCheckExpression,
+                                out var dataType
+                            );
 
-                                _ => throw new SieveException(
-                                    $"Incompatible member type. Expected one of {MemberTypes.Property} or {MemberTypes.Field} or {MemberTypes.Method}. Actual {memberInfo.MemberType}")
-                            };
-
-                            var modifiedValueAccessExpression = valueAccessExpression;
+                            var toBeFinalExpression = propertyAccessExpression;
 
                             var isFilterTermValueNull =
-                                IsFilterTermValueNull(valueAccessExpression, filterTerm, filterTermValue);
+                                IsFilterTermValueNull(propertyAccessExpression, filterTerm, filterTermValue);
 
                             var filterValue = isFilterTermValueNull
                                 ? Expression.Constant(null, dataType)
-                                : ConvertStringValueToConstantExpression(filterTermValue, dataType, TypeDescriptor.GetConverter(dataType));
+                                : ConvertStringValueToConstantExpression
+                                (
+                                    filterTermValue,
+                                    dataType,
+                                    TypeDescriptor.GetConverter(dataType)
+                                );
 
                             if (filterTerm.OperatorIsCaseInsensitive && !isFilterTermValueNull)
                             {
-                                modifiedValueAccessExpression = Expression.Call(modifiedValueAccessExpression,
-                                    typeof(string).GetMethods()
-                                        .First(m => m.Name == "ToUpper" && m.GetParameters().Length == 0));
+                                toBeFinalExpression = Expression.Call
+                                (
+                                    toBeFinalExpression,
+                                    typeof(string)
+                                        .GetMethods()
+                                        .First
+                                        (
+                                            m => m.Name == "ToUpper" &&
+                                                 m.GetParameters().Length == 0
+                                        )
+                                );
 
-                                filterValue = Expression.Call(filterValue,
-                                    typeof(string).GetMethods()
-                                        .First(m => m.Name == "ToUpper" && m.GetParameters().Length == 0));
+                                filterValue = Expression.Call
+                                (
+                                    filterValue,
+                                    typeof(string)
+                                        .GetMethods()
+                                        .First
+                                        (
+                                            m => m.Name == "ToUpper" &&
+                                                 m.GetParameters().Length == 0
+                                        )
+                                );
                             }
 
-                            var expression = GetExpression(filterTerm, filterValue, modifiedValueAccessExpression);
+                            toBeFinalExpression = GetExpression(filterTerm, filterValue, toBeFinalExpression);
 
                             if (filterTerm.OperatorIsNegated)
                             {
-                                expression = Expression.Not(expression);
+                                toBeFinalExpression = Expression.Not(toBeFinalExpression);
                             }
 
-                            if (expression.NodeType != ExpressionType.NotEqual || Options.Value.IgnoreNullsOnNotEqual)
+                            if (toBeFinalExpression.NodeType != ExpressionType.NotEqual ||
+                                Options.Value.IgnoreNullsOnNotEqual)
                             {
-                                var filterValueNullCheck = GetFilterValueNullCheck(valueAccessExpression, nullCheckExpression, isFilterTermValueNull);
+                                var filterValueNullCheck = propertyAccessExpression.GetNullCheckExpression
+                                (
+                                    nullCheckExpression,
+                                    true,
+                                    isFilterTermValueNull,
+                                    null,
+                                    null
+                                );
+
                                 if (filterValueNullCheck != null)
                                 {
-                                    expression = Expression.AndAlso(filterValueNullCheck, expression);
+                                    toBeFinalExpression = Expression.AndAlso(filterValueNullCheck, toBeFinalExpression);
                                 }
                             }
 
                             innerExpression = innerExpression == null
-                                ? expression
-                                : Expression.OrElse(innerExpression, expression);
+                                ? toBeFinalExpression
+                                : Expression.OrElse(innerExpression, toBeFinalExpression);
                         }
                     }
                     else
                     {
-                        result = ApplyCustomMethod(result, filterTermName, _customFilterMethods,
-                            new object[] {result, filterTerm.Operator, filterTerm.Values}, dataForCustomMethods);
+                        result = ApplyCustomMethod
+                        (
+                            result,
+                            filterTermName,
+                            _customFilterMethods,
+                            new object[] { result, filterTerm.Operator, filterTerm.Values },
+                            dataForCustomMethods
+                        );
                     }
                 }
 
@@ -263,21 +309,15 @@ namespace Sieve.Services
 
             return outerExpression == null
                 ? result
-                : result.Where(Expression.Lambda<Func<TEntity, bool>>(outerExpression, parameter));
+                : result.Where(Expression.Lambda<Func<TEntity, bool>>(outerExpression, parameterExpression));
         }
 
-        private static Expression GetFilterValueNullCheck(Expression valueAccessExpression, Expression nullCheckExpression, bool isFilterTermValueNull)
-        {
-            if (!isFilterTermValueNull && valueAccessExpression.Type.IsNullable())
-            {
-                return GenerateFilterNullCheckExpression(valueAccessExpression, nullCheckExpression);
-            }
-
-            return nullCheckExpression;
-        }
-
-        private static bool IsFilterTermValueNull(Expression propertyValue, TFilterTerm filterTerm,
-            string filterTermValue)
+        private static bool IsFilterTermValueNull
+        (
+            Expression propertyValue,
+            TFilterTerm filterTerm,
+            string filterTermValue
+        )
         {
             var isNotString = propertyValue.Type != typeof(string);
 
@@ -287,73 +327,13 @@ namespace Sieve.Services
             return filterTermValue.ToLower() == NullFilterValue && (isNotString || isValidStringNullOperation);
         }
 
-        private static (Expression ValueExpression, Expression NullCheck, Type DataType) GetFieldValueAndNullCheckExpression
-        (
-            ParameterExpression parameterExpression,
-            FieldInfo fieldInfo,
-            string fullPropertyName
-        )
-        {
-            if(!typeof(Expression).IsAssignableFrom(fieldInfo.FieldType) && !fieldInfo.IsStatic)
-                return GetPropertyValueAndNullCheckExpression(parameterExpression, fullPropertyName, fieldInfo.FieldType);
-
-            object fieldValue;
-
-            if (!fieldInfo.IsStatic)
-            {
-                fieldValue = null;
-
-                return (parameterExpression, null, null);
-            }
-
-            fieldValue = fieldInfo.GetValue(null);
-
-            if (!(fieldValue is LambdaExpression lambdaExpression))
-                return (parameterExpression, null, null);
-
-            var body = lambdaExpression.Body;
-
-            //var valueExpression = Expression.AndAlso(body, parameterExpression);
-            var valueExpression = Expression.Invoke(lambdaExpression, parameterExpression);
-
-
-            return (valueExpression, null, lambdaExpression.ReturnType);
-        }
-
-        private static (Expression ValueExpression, Expression NullCheck, Type DataType) GetPropertyValueAndNullCheckExpression(
-            Expression parameter, string fullPropertyName, Type propertyType)
-        {
-            var valueExpression = parameter;
-            Expression nullCheck = null;
-            var names = fullPropertyName.Split('.');
-            for (var i = 0; i < names.Length; i++)
-            {
-                valueExpression = valueExpression.GeneratePropertyAccess(names[i]);
-
-                if (i != names.Length - 1 && valueExpression.Type.IsNullable())
-                {
-                    nullCheck = GenerateFilterNullCheckExpression(valueExpression, nullCheck);
-                }
-            }
-
-            return (valueExpression, nullCheck, propertyType);
-        }
-
-        private static Expression GenerateFilterNullCheckExpression(Expression valueExpression,
-            Expression nullCheckExpression)
-        {
-            return nullCheckExpression == null
-                ? Expression.NotEqual(valueExpression, Expression.Default(valueExpression.Type))
-                : Expression.AndAlso(nullCheckExpression,
-                    Expression.NotEqual(valueExpression, Expression.Default(valueExpression.Type)));
-        }
-
         private static Expression ConvertStringValueToConstantExpression(string value, Type dataType, TypeConverter converter)
         {
             // to allow user to distinguish between prop==null (as null) and prop==\null (as "null"-string)
             value = value.Equals(EscapeChar + NullFilterValue, StringComparison.InvariantCultureIgnoreCase) 
                 ? value.TrimStart(EscapeChar) 
                 : value;
+
             var constantVal = converter.CanConvertFrom(typeof(string))
                 ? converter.ConvertFrom(value)
                 : Convert.ChangeType(value, dataType);
@@ -361,8 +341,12 @@ namespace Sieve.Services
             return GetClosureOverConstant(constantVal, dataType);
         }
 
-        private static Expression GetExpression(TFilterTerm filterTerm, Expression filterValueExpression,
-            Expression propertyValueExpression)
+        private static Expression GetExpression
+        (
+            TFilterTerm filterTerm,
+            Expression filterValueExpression,
+            Expression propertyValueExpression
+        )
         {
             if
             (
@@ -433,7 +417,6 @@ namespace Sieve.Services
                     )
                 )
             );
-
         }
 
         // Workaround to ensure that the filter value gets passed as a parameter in generated SQL from EF Core
@@ -443,8 +426,12 @@ namespace Sieve.Services
             return Expression.Convert(hoistedConstant.Body, targetType);
         }
 
-        protected virtual IQueryable<TEntity> ApplySorting<TEntity>(TSieveModel model, IQueryable<TEntity> result,
-            object[] dataForCustomMethods = null)
+        protected virtual IQueryable<TEntity> ApplySorting<TEntity>
+        (
+            TSieveModel model,
+            IQueryable<TEntity> result,
+            object[] dataForCustomMethods = null
+        )
         {
             if (model?.GetSortsParsed() == null)
             {
@@ -458,12 +445,24 @@ namespace Sieve.Services
 
                 if (property != null)
                 {
-                    result = result.OrderByDynamic(fullName, sortTerm.Descending, useThenBy, Options.Value.DisableNullableTypeExpressionForSorting);
+                    result = result.OrderByDynamic
+                    (
+                        fullName,
+                        sortTerm.Descending,
+                        useThenBy,
+                        Options.Value.DisableNullableTypeExpressionForSorting
+                    );
                 }
                 else
                 {
-                    result = ApplyCustomMethod(result, sortTerm.Name, _customSortMethods,
-                        new object[] {result, useThenBy, sortTerm.Descending}, dataForCustomMethods);
+                    result = ApplyCustomMethod
+                    (
+                        result,
+                        sortTerm.Name,
+                        _customSortMethods,
+                        new object[] { result, useThenBy, sortTerm.Descending },
+                        dataForCustomMethods
+                    );
                 }
 
                 useThenBy = true;
@@ -494,59 +493,103 @@ namespace Sieve.Services
             return mapper;
         }
 
-        private (string, MemberInfo) GetSieveProperty<TEntity>(bool canSortRequired, bool canFilterRequired,
-            string name)
+        private (string, MemberInfo) GetSieveProperty<TEntity>
+        (
+            bool canSortRequired,
+            bool canFilterRequired,
+            string name
+        )
         {
-            var property = _mapper.FindProperty<TEntity>(canSortRequired, canFilterRequired, name,
-                Options.Value.CaseSensitive);
+            var property = _mapper.FindProperty<TEntity>
+            (
+                canSortRequired,
+                canFilterRequired,
+                name,
+                Options.Value.CaseSensitive
+            );
+
             if (property.Item1 != null)
             {
                 return property;
             }
 
-            var prop = FindPropertyBySieveAttribute<TEntity>(canSortRequired, canFilterRequired, name,
-                Options.Value.CaseSensitive);
+            var prop = FindPropertyBySieveAttribute<TEntity>
+            (
+                canSortRequired,
+                canFilterRequired,
+                name,
+                Options.Value.CaseSensitive
+            );
+
             return (prop?.Name, prop);
         }
 
-        private static PropertyInfo FindPropertyBySieveAttribute<TEntity>(bool canSortRequired, bool canFilterRequired,
-            string name, bool isCaseSensitive)
+        private static PropertyInfo FindPropertyBySieveAttribute<TEntity>
+        (
+            bool canSortRequired,
+            bool canFilterRequired,
+            string name,
+            bool isCaseSensitive
+        )
         {
             return Array.Find(typeof(TEntity).GetProperties(),
-                p => p.GetCustomAttribute(typeof(SieveAttribute)) is SieveAttribute SieveAttribute
-                     && (!canSortRequired || SieveAttribute.CanSort)
-                     && (!canFilterRequired || SieveAttribute.CanFilter)
-                     && (SieveAttribute.Name ?? p.Name).Equals(name,
-                         isCaseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase));
+                p => p.GetCustomAttribute(typeof(SieveAttribute)) is SieveAttribute sieveAttribute
+                     && (!canSortRequired || sieveAttribute.CanSort)
+                     && (!canFilterRequired || sieveAttribute.CanFilter)
+                     && (sieveAttribute.Name ?? p.Name).Equals
+                     (
+                         name,
+                         isCaseSensitive
+                             ? StringComparison.Ordinal
+                             : StringComparison.OrdinalIgnoreCase
+                     )
+            );
         }
 
-        private IQueryable<TEntity> ApplyCustomMethod<TEntity>(IQueryable<TEntity> result, string name, object parent,
-            object[] parameters, object[] optionalParameters = null)
+        private IQueryable<TEntity> ApplyCustomMethod<TEntity>
+        (
+            IQueryable<TEntity> result,
+            string name,
+            object parent,
+            object[] parameters,
+            object[] optionalParameters = null
+        )
         {
-            var customMethod = parent?.GetType()
-                .GetMethodExt(name,
+            var customMethod = parent?
+                .GetType()
+                .GetMethodExt
+                (
+                    name,
                     Options.Value.CaseSensitive
                         ? BindingFlags.Default
                         : BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance,
-                    typeof(IQueryable<TEntity>));
-
+                    typeof(IQueryable<TEntity>)
+                );
 
             if (customMethod == null)
             {
                 // Find generic methods `public IQueryable<T> Filter<T>(IQueryable<T> source, ...)`
-                var genericCustomMethod = parent?.GetType()
-                    .GetMethodExt(name,
+                var genericCustomMethod = parent?
+                    .GetType()
+                    .GetMethodExt
+                    (
+                        name,
                         Options.Value.CaseSensitive
                             ? BindingFlags.Default
                             : BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance,
-                        typeof(IQueryable<>));
+                        typeof(IQueryable<>)
+                    );
 
-                if (genericCustomMethod != null &&
+                if 
+                (
+                    genericCustomMethod != null &&
                     genericCustomMethod.ReturnType.IsGenericType &&
-                    genericCustomMethod.ReturnType.GetGenericTypeDefinition() == typeof(IQueryable<>))
+                    genericCustomMethod.ReturnType.GetGenericTypeDefinition() == typeof(IQueryable<>)
+                )
                 {
                     var genericBaseType = genericCustomMethod.ReturnType.GenericTypeArguments[0];
                     var constraints = genericBaseType.GetGenericParameterConstraints();
+
                     if (constraints == null || constraints.Length == 0 ||
                         constraints.All((t) => t.IsAssignableFrom(typeof(TEntity))))
                     {
@@ -577,30 +620,34 @@ namespace Sieve.Services
             }
             else
             {
-                var incompatibleCustomMethods =
-                    parent?
-                        .GetType()
-                        .GetMethods(Options.Value.CaseSensitive
-                            ? BindingFlags.Default
-                            : BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance)
-                        .Where(method => string.Equals(method.Name, name,
-                            Options.Value.CaseSensitive
-                                ? StringComparison.InvariantCulture
-                                : StringComparison.InvariantCultureIgnoreCase))
-                        .ToList()
-                    ?? new List<MethodInfo>();
+                var incompatibleCustomMethods = parent?
+                                                    .GetType()
+                                                    .GetMethods(Options.Value.CaseSensitive
+                                                        ? BindingFlags.Default
+                                                        : BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance)
+                                                    .Where(method => string.Equals(method.Name, name,
+                                                        Options.Value.CaseSensitive
+                                                            ? StringComparison.InvariantCulture
+                                                            : StringComparison.InvariantCultureIgnoreCase))
+                                                    .ToList()
+                                                ?? new List<MethodInfo>();
 
                 if (!incompatibleCustomMethods.Any())
                 {
                     throw new SieveMethodNotFoundException(name, $"{name} not found.");
                 }
 
-                var incompatibles =
+                var incompatibles = 
                     from incompatibleCustomMethod in incompatibleCustomMethods
                     let expected = typeof(IQueryable<TEntity>)
                     let actual = incompatibleCustomMethod.ReturnType
-                    select new SieveIncompatibleMethodException(name, expected, actual,
-                        $"{name} failed. Expected a custom method for type {expected} but only found for type {actual}");
+                    select new SieveIncompatibleMethodException
+                    (
+                        name,
+                        expected,
+                        actual,
+                        $"{name} failed. Expected a custom method for type {expected} but only found for type {actual}"
+                    );
 
                 var aggregate = new AggregateException(incompatibles);
 

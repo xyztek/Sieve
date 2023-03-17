@@ -219,7 +219,10 @@ namespace SieveUnitTests
             {
                 var result = sieveProcessor.Apply(model, _posts);
 
-                Assert.True(result.Count() == _posts.Count(post => !post.IsDraft));
+                var resultCount = result.Count();
+                var actualCount = _posts.Count(post => !post.IsDraft);
+
+                Assert.True(resultCount == actualCount);
             }
         }
 
@@ -245,7 +248,10 @@ namespace SieveUnitTests
             {
                 var result = sieveProcessor.Apply(model, _posts);
 
-                Assert.True(result.Count() == _posts.Count(post => post.CategoryId == 1));
+                var resultCount = result.Count();
+                var actualCount = _posts.Count(post => post.CategoryId == 1);
+
+                Assert.True(resultCount == actualCount);
             }
         }
 
@@ -632,7 +638,7 @@ namespace SieveUnitTests
         [Theory]
         [InlineData(false)]
         [InlineData(true)]
-        public void FilteringByExpressionWorks(bool checkValue)
+        public void FilteringByStaticExpressionWorks(bool checkValue)
         {
             var model = new SieveModel
             {
@@ -643,6 +649,84 @@ namespace SieveUnitTests
             {
                 var result = sieveProcessor.Apply(model, _posts);
                 Assert.Equal(_posts.Count(post => post.IsDraft == checkValue), result.Count());
+            }
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void OrderingByStaticExpressionWorks(bool ascending)
+        {
+            var model = new SieveModel
+            {
+                Sorts = $"{(ascending ? "" : "-")}Expression"
+            };
+
+            foreach (var sieveProcessor in GetProcessors())
+            {
+                var result = sieveProcessor
+                    .Apply(model, _posts)
+                    .Select(post => post.IsDraft);
+
+                var original =
+                    (
+                        ascending
+                            ? _posts.OrderBy(post => post.IsDraft)
+                            : _posts.OrderByDescending(post => post.IsDraft)
+                    )
+                    .Select(post => post.IsDraft);
+
+                Assert.True(result.SequenceEqual(original));
+            }
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void FilteringByInstanceExpressionWorks(bool checkValue)
+        {
+            var model = new SieveModel
+            {
+                Filters = $"TestExpression_Instance=={checkValue}"
+            };
+
+            TestOutputHelper.WriteLine(model.Filters);
+
+            foreach (var sieveProcessor in GetProcessors())
+            {
+                var result = sieveProcessor.Apply(model, _posts);
+                Assert.Equal(_posts.Count(post => post.IsDraft == checkValue), result.Count());
+            }
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void OrderingByInstanceExpressionWorks(bool ascending)
+        {
+            var model = new SieveModel
+            {
+                Sorts = $"{(ascending ? "" : "-")}TestExpression_Instance"
+            };
+
+            TestOutputHelper.WriteLine(model.Sorts);
+
+            foreach (var sieveProcessor in GetProcessors())
+            {
+                var result = sieveProcessor
+                    .Apply(model, _posts)
+                    .Select(post => post.IsDraft)
+                    .ToList();
+
+                var original =
+                    (
+                        ascending
+                            ? _posts.OrderBy(post => post.IsDraft)
+                            : _posts.OrderByDescending(post => post.IsDraft)
+                    )
+                    .Select(post => post.IsDraft);
+
+                Assert.True(result.SequenceEqual(original));
             }
         }
 
