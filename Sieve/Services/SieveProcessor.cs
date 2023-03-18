@@ -201,6 +201,7 @@ namespace Sieve.Services
                         {
                             var propertyAccessExpression = parameterExpression.GenerateFullExpressionTree
                             (
+                                memberInfo,
                                 fullMemberName,
                                 true,
                                 null,
@@ -447,6 +448,7 @@ namespace Sieve.Services
                 {
                     result = result.OrderByDynamic
                     (
+                        property,
                         fullName,
                         sortTerm.Descending,
                         useThenBy,

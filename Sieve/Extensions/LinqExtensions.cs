@@ -24,6 +24,7 @@ namespace Sieve.Extensions
         private static Expression GeneratePropertyAccess
         (
             this Expression expression,
+            MemberInfo memberInfo,
             string propertyName
         )
         {
@@ -50,12 +51,13 @@ namespace Sieve.Extensions
                     return CheckStatic
                     (
                         expression,
-                        propertyName
+                        memberInfo
                     );
 
                 return CheckInterface
                 (
                     expression,
+                    memberInfo,
                     propertyName
                 );
             }
@@ -63,35 +65,15 @@ namespace Sieve.Extensions
             static Expression CheckStatic
             (
                 Expression originalExpression,
-                string propertyName
+                MemberInfo memberInfo
             )
             {
-                var expressionType = originalExpression.Type;
-
-                var members = expressionType
-                    .GetMembers()
-                    .Where(info => info.Name == propertyName)
-                    .ToList();
-
-                object memberValue = null;
-
-                var propertyInfo = members
-                    .OfType<PropertyInfo>()
-                    .SingleOrDefault();
-
-                if (propertyInfo != null && propertyInfo.GetMethod.IsStatic)
+                var memberValue = memberInfo switch
                 {
-                    memberValue = propertyInfo.GetValue(null);
-                }
-                else
-                {
-                    var fieldInfo = members
-                        .OfType<FieldInfo>()
-                        .SingleOrDefault();
-
-                    if (fieldInfo != null && fieldInfo.IsStatic)
-                        memberValue = fieldInfo.GetValue(null);
-                }
+                    PropertyInfo propertyInfo when propertyInfo.GetMethod.IsStatic => propertyInfo.GetValue(null),
+                    FieldInfo { IsStatic: true } fieldInfo => fieldInfo.GetValue(null),
+                    _ => null
+                };
 
                 if (!(memberValue is LambdaExpression lambdaExpression)) 
                     return originalExpression;
@@ -108,6 +90,7 @@ namespace Sieve.Extensions
             static Expression CheckInterface
             (
                 Expression originalExpression,
+                MemberInfo memberInfo,
                 string propertyName
             )
             {
@@ -126,7 +109,14 @@ namespace Sieve.Extensions
                                 .Any(info => info.Name == propertyName)
                         )
                         .Select(implementedInterface => Expression.TypeAs(originalExpression, implementedInterface))
-                        .Single();
+                        .SingleOrDefault();
+
+                    if (interfacedExpression is null)
+                        return CheckStatic
+                        (
+                            originalExpression,
+                            memberInfo
+                        );
                 }
                 catch (InvalidOperationException ioe)
                 {
@@ -139,7 +129,7 @@ namespace Sieve.Extensions
 
                 try
                 {
-                    var accessExpression = interfacedExpression.GeneratePropertyAccess(propertyName);
+                    var accessExpression = interfacedExpression.GeneratePropertyAccess(memberInfo, propertyName);
 
                     return accessExpression;
                 }
@@ -150,7 +140,7 @@ namespace Sieve.Extensions
                     return CheckStatic
                     (
                         interfacedExpression,
-                        propertyName
+                        memberInfo
                     );
                 }
             }
@@ -159,6 +149,7 @@ namespace Sieve.Extensions
         public static IQueryable<TEntity> OrderByDynamic<TEntity>
         (
             this IQueryable<TEntity> source,
+            MemberInfo memberInfo,
             string fullPropertyName,
             bool desc,
             bool useThenBy,
@@ -170,6 +161,7 @@ namespace Sieve.Extensions
             var lambda = parameterExpression
                 .GenerateFullExpressionTree
                 (
+                    memberInfo,
                     fullPropertyName,
                     false,
                     null,
@@ -244,6 +236,7 @@ namespace Sieve.Extensions
         public static Expression GenerateFullExpressionTree
         (
             this ParameterExpression entityParameterExpression,
+            MemberInfo memberInfo,
             string fullPropertyName,
             bool forFilterOperation,
             bool? isFilterTermValueNull,
@@ -261,6 +254,7 @@ namespace Sieve.Extensions
             {
                 headExpression = headExpression.GenerateSafeMemberAccess
                 (
+                    memberInfo,
                     propertyNames[index],
                     forFilterOperation,
                     isFilterTermValueNull,
@@ -278,6 +272,7 @@ namespace Sieve.Extensions
         private static Expression GenerateSafeMemberAccess
         (
             this Expression expression,
+            MemberInfo memberInfo,
             string propertyName,
             bool forFilterOperation,
             bool? isFilterTermValueNull,
@@ -286,7 +281,7 @@ namespace Sieve.Extensions
             ref Expression cumulativeNullCheckExpression
         )
         {
-            var accessExpression = expression.GeneratePropertyAccess(propertyName);
+            var accessExpression = expression.GeneratePropertyAccess(memberInfo, propertyName);
 
             cumulativeNullCheckExpression = accessExpression.GetNullCheckExpression
             (
