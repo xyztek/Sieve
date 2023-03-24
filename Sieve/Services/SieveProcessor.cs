@@ -339,6 +339,11 @@ namespace Sieve.Services
                 ? converter.ConvertFrom(value)
                 : Convert.ChangeType(value, dataType);
 
+            if (constantVal is DateTime dateVal)
+            {
+                constantVal = dateVal.ToUniversalTime();
+            }
+
             return GetClosureOverConstant(constantVal, dataType);
         }
 
@@ -349,50 +354,91 @@ namespace Sieve.Services
             Expression propertyValueExpression
         )
         {
+            DateTime? possibleDateTimeFilterValue = null;
+
+            if 
+            (
+                filterValueExpression is UnaryExpression
+                {
+                    Operand: MemberExpression
+                    {
+                        Expression: ConstantExpression constantExpression
+                    }
+                }
+            )
+            {
+                // check if this a DateTime
+                var currentFilterValue = (constantExpression.Value as dynamic).constant;
+
+                if (currentFilterValue is DateTime dateTime)
+                {
+                    possibleDateTimeFilterValue = dateTime.ToUniversalTime();
+
+                    filterValueExpression = Expression.Constant
+                    (
+                        possibleDateTimeFilterValue,
+                        ((propertyValueExpression as MemberExpression)?.Member as PropertyInfo)?.PropertyType ??
+                        typeof(DateTime?)
+                    );
+                }
+            }
+
             if
             (
-                (
-                    filterTerm.OperatorParsed != FilterOperator.DateEquals &&
-                    filterTerm.OperatorParsed != FilterOperator.DateNotEquals
-                ) ||
-                !(
-                    filterValueExpression is UnaryExpression
-                    {
-                        Operand: MemberExpression
-                        {
-                            Expression: ConstantExpression constantExpression
-                        }
-                    }
-                )
+                filterTerm.OperatorParsed != FilterOperator.DateEquals &&
+                filterTerm.OperatorParsed != FilterOperator.DateNotEquals &&
+                possibleDateTimeFilterValue == null
             )
+            {
                 return filterTerm.OperatorParsed switch
                 {
                     FilterOperator.Equals => Expression.Equal(propertyValueExpression, filterValueExpression),
                     FilterOperator.NotEquals => Expression.NotEqual(propertyValueExpression, filterValueExpression),
-                    FilterOperator.GreaterThan =>
-                        Expression.GreaterThan(propertyValueExpression, filterValueExpression),
+                    FilterOperator.GreaterThan => Expression.GreaterThan
+                    (
+                        propertyValueExpression,
+                        filterValueExpression
+                    ),
                     FilterOperator.LessThan => Expression.LessThan(propertyValueExpression, filterValueExpression),
-                    FilterOperator.GreaterThanOrEqualTo => Expression.GreaterThanOrEqual(propertyValueExpression,
-                        filterValueExpression),
-                    FilterOperator.LessThanOrEqualTo => Expression.LessThanOrEqual(propertyValueExpression,
-                        filterValueExpression),
-                    FilterOperator.Contains => Expression.Call(propertyValueExpression,
-                        typeof(string).GetMethods().First(m => m.Name == "Contains" && m.GetParameters().Length == 1),
-                        filterValueExpression),
-                    FilterOperator.StartsWith => Expression.Call(propertyValueExpression,
-                        typeof(string).GetMethods().First(m => m.Name == "StartsWith" && m.GetParameters().Length == 1),
-                        filterValueExpression),
-                    FilterOperator.EndsWith => Expression.Call(propertyValueExpression,
-                        typeof(string).GetMethods().First(m => m.Name == "EndsWith" && m.GetParameters().Length == 1),
-                        filterValueExpression),
+                    FilterOperator.GreaterThanOrEqualTo => Expression.GreaterThanOrEqual
+                    (
+                        propertyValueExpression,
+                        filterValueExpression
+                    ),
+                    FilterOperator.LessThanOrEqualTo => Expression.LessThanOrEqual
+                    (
+                        propertyValueExpression,
+                        filterValueExpression
+                    ),
+                    FilterOperator.Contains => Expression.Call
+                    (
+                        propertyValueExpression,
+                        typeof(string)
+                            .GetMethods()
+                            .First(m => m.Name == "Contains" && m.GetParameters().Length == 1),
+                        filterValueExpression
+                    ),
+                    FilterOperator.StartsWith => Expression.Call
+                    (
+                        propertyValueExpression,
+                        typeof(string)
+                            .GetMethods()
+                            .First(m => m.Name == "StartsWith" && m.GetParameters().Length == 1),
+                        filterValueExpression
+                    ),
+                    FilterOperator.EndsWith => Expression.Call
+                    (
+                        propertyValueExpression,
+                        typeof(string)
+                            .GetMethods()
+                            .First(m => m.Name == "EndsWith" && m.GetParameters().Length == 1),
+                        filterValueExpression
+                    ),
                     _ => Expression.Equal(propertyValueExpression, filterValueExpression)
                 };
+            }
 
-            var currentFilterValue = (constantExpression.Value as dynamic).constant;
-
-            var filterValue = currentFilterValue as DateTime?;
-
-            var lowerBoundFilterValue = filterValue?.ToUniversalTime();
+            var lowerBoundFilterValue = possibleDateTimeFilterValue?.ToUniversalTime();
             var upperBoundFilterValue = lowerBoundFilterValue?.AddDays(1);
 
             return Expression.AndAlso
