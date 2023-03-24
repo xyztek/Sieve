@@ -20,7 +20,7 @@ namespace SieveUnitTests
         /// <returns></returns>
         public static IEnumerable<ISieveProcessor> GetProcessors()
         {
-            // normal processor
+            //normal processor
             yield return new ApplicationSieveProcessor(
                     new SieveOptionsAccessor(),
                     new SieveCustomSortMethods(),

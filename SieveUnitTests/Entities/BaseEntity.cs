@@ -14,6 +14,6 @@ namespace SieveUnitTests.Entities
         public string DeletedBy { get; set; }
 
         [Sieve(CanFilter = true)]
-        public DateTime DeletedAt { get; set; }
+        public DateTime? DeletedAt { get; set; }
     }
 }

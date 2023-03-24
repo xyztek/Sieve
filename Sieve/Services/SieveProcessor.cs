@@ -443,13 +443,13 @@ namespace Sieve.Services
             Expression lowerBoundFilterExpression = Expression.Equal
             (
                 propertyValueExpression,
-                Expression.Default(typeof(DateTime?))
+                Expression.Default(propertyValueExpression.Type)
             );
             
             Expression upperBoundFilterExpression = Expression.Equal
             (
                 propertyValueExpression,
-                Expression.Default(typeof(DateTime?))
+                Expression.Default(propertyValueExpression.Type)
             );
 
             if (lowerBoundFilterValue != null)
