@@ -386,8 +386,7 @@ namespace Sieve.Services
             if
             (
                 filterTerm.OperatorParsed != FilterOperator.DateEquals &&
-                filterTerm.OperatorParsed != FilterOperator.DateNotEquals &&
-                possibleDateTimeFilterValue == null
+                filterTerm.OperatorParsed != FilterOperator.DateNotEquals
             )
             {
                 return filterTerm.OperatorParsed switch
@@ -441,9 +440,21 @@ namespace Sieve.Services
             var lowerBoundFilterValue = possibleDateTimeFilterValue?.ToUniversalTime();
             var upperBoundFilterValue = lowerBoundFilterValue?.AddDays(1);
 
-            return Expression.AndAlso
+            Expression lowerBoundFilterExpression = Expression.Equal
             (
-                Expression.GreaterThanOrEqual
+                propertyValueExpression,
+                Expression.Default(typeof(DateTime?))
+            );
+            
+            Expression upperBoundFilterExpression = Expression.Equal
+            (
+                propertyValueExpression,
+                Expression.Default(typeof(DateTime?))
+            );
+
+            if (lowerBoundFilterValue != null)
+            {
+                lowerBoundFilterExpression = Expression.GreaterThanOrEqual
                 (
                     propertyValueExpression,
                     Expression.Constant
@@ -452,8 +463,12 @@ namespace Sieve.Services
                         ((propertyValueExpression as MemberExpression)?.Member as PropertyInfo)?.PropertyType ??
                         typeof(DateTime?)
                     )
-                ),
-                Expression.LessThan
+                );
+            }
+
+            if (upperBoundFilterValue != null)
+            {
+                upperBoundFilterExpression = Expression.LessThan
                 (
                     propertyValueExpression,
                     Expression.Constant
@@ -462,7 +477,13 @@ namespace Sieve.Services
                         ((propertyValueExpression as MemberExpression)?.Member as PropertyInfo)?.PropertyType ??
                         typeof(DateTime?)
                     )
-                )
+                );
+            }
+            
+            return Expression.AndAlso
+            (
+                lowerBoundFilterExpression,
+                upperBoundFilterExpression
             );
         }
 

@@ -731,6 +731,24 @@ namespace SieveUnitTests
         }
 
         [Fact]
+        public void FilteringDateWithNullFilterWorks()
+        {
+            var model = new SieveModel
+            {
+                Filters = "DeletedAt$=null"
+            };
+
+            foreach (var sieveProcessor in GetProcessors())
+            {
+                var result = sieveProcessor.Apply(model, _posts);
+                Assert.Equal(1, result.Count());
+
+                Assert.Equal(1, result.Single().Id);
+                Assert.Equal("B", result.Single().Title);
+            }
+        }
+
+        [Fact]
         public void FilteringDateWorks()
         {
             var model = new SieveModel
