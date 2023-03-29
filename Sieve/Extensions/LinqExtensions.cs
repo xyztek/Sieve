@@ -223,12 +223,16 @@ namespace Sieve.Extensions
             Expression nullCheckExpression
         )
         {
+            var ifTrueExpression = expression.Type.IsNullable()
+                ? (Expression)Expression.Constant(null, expression.Type)
+                : Expression.Default(expression.Type);
+
             return nullCheckExpression == null
                 ? expression
                 : Expression.Condition
                 (
                     nullCheckExpression,
-                    Expression.Default(expression.Type),
+                    ifTrueExpression,
                     expression
                 );
         }
